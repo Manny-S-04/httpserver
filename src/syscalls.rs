@@ -1,6 +1,5 @@
 use std::arch::asm;
-
-pub const BUF_COUNT: usize = 128;
+use crate::BUF_COUNT;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -102,14 +101,14 @@ pub fn read(fd: i64, buf: &mut [u8; BUF_COUNT], count: usize) -> isize {
     }
 }
 
-pub fn write(fd: i64, buf: &[u8; BUF_COUNT], count: isize) -> i64 {
+pub fn write(fd: i64, buf: &[u8], count: isize) -> i64 {
     unsafe {
         let ret: i64;
         asm!(
             "syscall",
             inlateout("rax") 1i64 => ret,
             in("rdi") fd,
-            in("rsi") buf,
+            in("rsi") buf.as_ptr(),
             in("rdx") count,
             lateout("rcx") _,
             lateout("r11") _,
@@ -118,14 +117,12 @@ pub fn write(fd: i64, buf: &[u8; BUF_COUNT], count: isize) -> i64 {
     }
 }
 
-// 42	sys_connect	int fd	struct sockaddr *uservaddr	int addrlen
-
-pub fn connect(fd: i64, addr: &mut SockaddrIn, addrlen: &mut i64) -> i64 {
+pub fn connect(fd: i64, addr: &mut SockaddrIn, addrlen: i64) -> i64 {
     unsafe {
         let ret: i64;
         asm!(
             "syscall",
-            inlateout("rax") 1i64 => ret,
+            inlateout("rax") 42i64 => ret,
             in("rdi") fd,
             in("rsi") addr,
             in("rdx") addrlen,
@@ -136,3 +133,16 @@ pub fn connect(fd: i64, addr: &mut SockaddrIn, addrlen: &mut i64) -> i64 {
     }
 }
 
+pub fn close(fd: i64) -> i64 {
+    unsafe {
+        let ret: i64;
+        asm!(
+            "syscall",
+            inlateout("rax") 3i64 => ret,
+            in("rdi") fd,
+            lateout("rcx") _,
+            lateout("r11") _,
+        );
+        ret
+    }
+}
