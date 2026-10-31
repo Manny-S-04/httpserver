@@ -1,57 +1,42 @@
-use http::*;
-use syscalls::*;
+use httpserver::syscalls::*;
+use httpserver::*;
 
 fn main() {
-    let client_fd = client(AF_INET, S_TYPE, PROTOCOL, PORT, INADDR_ANY);
-    let mut input = String::new();
+    let path = std::env::args().nth(1).unwrap_or("/".to_string());
+    let fd = match client(INADDR_LOOPBACK, PORT) {
+        Ok(fd) => fd,
+        Err(e) => {
+            eprintln!("connect to {PORT}: {e:?}");
+            std::process::exit(1);
+        }
+    };
+
+    let req = format!("GET {path} HTTP/1.1\r\nHost: localhost:{PORT}\r\n\r\n");
+    if let Err(e) = send_all(fd, req.as_bytes()) {
+        eprintln!("send: {e:?}");
+    }
+
+    let mut buf = [0u8; 4096];
     loop {
-        input.clear();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let line = input.trim_end();
-        if line.is_empty() {
-            continue;
-        }
-
-        let bytes = line.as_bytes();
-        if bytes.len() > BUF_COUNT {
-            eprintln!("line too long, dropping");
-            continue;
-        }
-
-        let mut buf = [0u8; BUF_COUNT];
-        buf[..bytes.len()].copy_from_slice(bytes);
-
-        let mut sent = 0usize;
-        while sent < bytes.len() {
-            let remaining = &buf[sent..bytes.len()];
-            let res = write(client_fd, remaining, remaining.len() as isize);
-
-            if res < 0 {
-                eprintln!("write failed: {res}");
+        match read(fd, &mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                let _ = write(1, &buf[..n]);
+            }
+            Err(e) => {
+                eprintln!("read: {e:?}");
                 break;
             }
-
-            sent += res as usize;
-        }
-
-        if line == "close" {
-            close(client_fd);
-            break;
         }
     }
+    let _ = close(fd);
 }
 
-fn client(sa_family: u16, sa_type: u16, protocol: u16, port: u16, addr: u32) -> i64 {
-    let fd: i64 = socket(sa_family as i64, sa_type as i64, protocol as i64);
-    let mut sockaddr_in =
-    SockaddrIn {
-        sin_family: sa_family,
-        sin_port: port.to_be(), // to big endian
-        sin_addr: addr,
-        padding: [0; 8]
-    };
-    let len = size_of::<SockaddrIn>() as i64;
-    let res = connect(fd, &mut sockaddr_in, len);
-    assert_eq!(res, 0);
-    fd
+fn client(addr: u32, port: u16) -> Result<i64, errno::Errno> {
+    let fd = socket(AF_INET, S_TYPE, PROTOCOL)?;
+    if let Err(e) = connect(fd, &sockaddr_in(AF_INET, addr, port)) {
+        let _ = close(fd);
+        return Err(e);
+    }
+    Ok(fd)
 }
